@@ -16,6 +16,7 @@
 #define DDEBUG 0
 #endif
 #include "ddebug.h"
+#include <linux/netfilter_ipv4.h>
 
 
 #include "ngx_stream_lua_common.h"
@@ -217,5 +218,44 @@ ngx_stream_lua_shared_memory_init(ngx_shm_zone_t *shm_zone, void *data)
 
     return NGX_OK;
 }
+
+
+int
+ngx_stream_lua_ffi_req_dst_addr(ngx_stream_lua_request_t *r, char *buf,
+    int *buf_size, u_char *errbuf, size_t *errbuf_size)
+{
+    int                fd;
+    struct sockaddr_in addr;
+    socklen_t          addr_sz = sizeof(addr);
+
+    if (r->session->connection == NULL) {
+        *errbuf_size = ngx_snprintf(errbuf, *errbuf_size, "no connection")
+                       - errbuf;
+        return NGX_ERROR;
+    }
+
+    fd = r->session->connection->fd;
+
+    if (fd < 0) {
+        *errbuf_size = ngx_snprintf(errbuf, *errbuf_size, "invalid fd")
+                       - errbuf;
+        return NGX_ERROR;
+    }
+
+    memset(&addr, 0, addr_sz);
+    addr.sin_family = AF_INET;
+    if (getsockopt(fd, SOL_IP, SO_ORIGINAL_DST, &addr, &addr_sz) != 0) {
+        *errbuf_size
+            = ngx_snprintf(errbuf, *errbuf_size, "failed to get origin addr")
+              - errbuf;
+        return NGX_ERROR;
+    }
+
+    *buf_size = ngx_sock_ntop((struct sockaddr *)&addr, addr_sz,
+                              (u_char *) buf, *buf_size, 1);
+
+    return NGX_OK;
+}
+
 
 /* vi:set ft=c ts=4 sw=4 et fdm=marker: */
